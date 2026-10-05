@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Voice-Controlled MP3 Player</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:#0b0f14;color:#fff;min-height:100vh}.app{width:min(900px,94%);margin:30px auto;padding:24px;background:#121923;border-radius:20px;box-shadow:0 15px 45px rgba(0,0,0,.35)}h1{margin-top:0}.now{padding:18px;border-radius:14px;background:#1b2532;margin-bottom:18px}#title{font-size:1.2rem;font-weight:bold}#status{margin-top:8px;color:#9fb3c8}.controls,.volume{display:flex;gap:10px;flex-wrap:wrap;margin:15px 0}button,input[type=file]{border:0;border-radius:10px;padding:11px 14px}button{background:#2b7cff;color:#fff;cursor:pointer}button:hover{opacity:.9}input[type=range]{width:100%}.playlist{margin-top:20px;display:grid;gap:8px}.track{padding:13px;background:#1a2330;border-radius:10px;cursor:pointer}.track.active{outline:2px solid #2b7cff}.small{color:#9fb3c8;font-size:.9rem}
+</style>
+</head>
+<body>
+<div class="app">
+<h1>🎵 Voice-Controlled MP3 Player</h1>
+<div class="now"><div id="title">No song selected</div><div id="status">Starting...</div></div>
+<div class="controls">
+<button id="prev">⏮ Previous</button><button id="play">▶ Play</button><button id="pause">⏸ Pause</button><button id="stop">⏹ Stop</button><button id="next">Next ⏭</button>
+</div>
+<input id="fileInput" type="file" accept="audio/*" multiple>
+<div class="volume"><button id="volDown">🔉 Volume -</button><button id="volUp">🔊 Volume +</button><button id="mute">🔇 Mute</button></div>
+<input id="progress" type="range" min="0" max="100" value="0">
+<audio id="audio" preload="metadata"></audio>
+<div class="playlist" id="playlist"></div>
+<p class="small">Voice commands: “Player play”, “Player pause”, “Player next”, “Player previous”, “Player volume up”, “Player volume down”, “Player mute”, “Player unmute”, “Player what’s playing”, or “Player list songs”.</p>
+</div>
+<script>
+const TRACKS=[
+{title:"Demo Song 1",url:"https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3?filename=relaxing-music-117484.mp3"},
+{title:"Demo Song 2",url:"https://cdn.pixabay.com/download/audio/2022/10/25/audio_9468cddbe1.mp3?filename=lofi-study-112191.mp3"},
+{title:"Demo Song 3",url:"https://cdn.pixabay.com/download/audio/2022/08/23/audio_4196e0c1a9.mp3?filename=beautiful-dream-116020.mp3"}];
+const WAKE_WORD="player",audio=document.getElementById("audio"),titleEl=document.getElementById("title"),statusEl=document.getElementById("status"),playlistEl=document.getElementById("playlist"),progressEl=document.getElementById("progress"),fileInput=document.getElementById("fileInput");
+let tracks=[...TRACKS],currentIndex=-1,recognition=null,listening=false,muted=false;
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function fmt(s){if(!Number.isFinite(s))return"0:00";return Math.floor(s/60)+":"+Math.floor(s%60).toString().padStart(2,"0")}
+function renderPlaylist(){playlistEl.innerHTML="";tracks.forEach((t,i)=>{let d=document.createElement("div");d.className="track"+(i===currentIndex?" active":"");d.innerHTML="<strong>"+escapeHtml(t.title)+"</strong><div class="small">"+(t.duration?fmt(t.duration):"Loading...")+"</div>";d.onclick=()=>playIndex(i);playlistEl.appendChild(d)})}
+function setStatus(t){statusEl.textContent=t}
+function speak(t){setStatus(t);if("speechSynthesis"in window){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(t))}}
+function playIndex(i){if(!tracks.length)return;currentIndex=(i+tracks.length)%tracks.length;let t=tracks[currentIndex];audio.src=t.url;titleEl.textContent=t.title;renderPlaylist();audio.play().then(()=>speak("Playing "+t.title)).catch(()=>setStatus("Tap Play to start this song."))}
+function playCurrent(){if(currentIndex<0){playIndex(0);return}audio.play().then(()=>speak("Playing "+tracks[currentIndex].title))}
+function pauseCurrent(){audio.pause();speak("Paused")}
+function stopCurrent(){audio.pause();audio.currentTime=0;speak("Stopped")}
+function nextTrack(){playIndex(currentIndex+1)}
+function previousTrack(){playIndex(currentIndex-1)}
+function volumeUp(){audio.volume=Math.min(1,audio.volume+.1);muted=false;audio.muted=false;speak("Volume "+Math.round(audio.volume*100)+" percent")}
+function volumeDown(){audio.volume=Math.max(0,audio.volume-.1);speak("Volume "+Math.round(audio.volume*100)+" percent")}
+function setVolume(p){let v=Math.max(0,Math.min(100,Number(p)));audio.volume=v/100;muted=false;audio.muted=false;speak("Volume "+v+" percent")}
+function toggleMute(){muted=!muted;audio.muted=muted;speak(muted?"Muted":"Unmuted")}
+function findTrack(q){q=q.toLowerCase().trim();return tracks.findIndex(t=>t.title.toLowerCase().includes(q))}
+function listSongs(){speak(tracks.length?"Songs are "+tracks.map(t=>t.title).join(", "):"There are no songs.")}
+function processCommand(command){
+let text=command.toLowerCase().trim();if(!text.includes(WAKE_WORD))return;text=text.replace(WAKE_WORD,"").trim();if(!text){speak("Yes?");return}
+if(text.includes("what")&&(text.includes("playing")||text.includes("song"))){speak(currentIndex>=0?"Currently playing "+tracks[currentIndex].title:"No song is playing");return}
+if(text.includes("list")||text.includes("songs")){listSongs();return}
+if(text.includes("volume")&&text.match(/\d+/)){setVolume(text.match(/\d+/)[0]);return}
+if(text.includes("volume up")||text.includes("increase volume")||text.includes("louder")){volumeUp();return}
+if(text.includes("volume down")||text.includes("decrease volume")||text.includes("quieter")){volumeDown();return}
+if(text.includes("unmute")){muted=false;audio.muted=false;speak("Unmuted");return}
+if(text.includes("mute")){muted=true;audio.muted=true;speak("Muted");return}
+if(text.includes("next")||text.includes("skip")){nextTrack();return}
+if(text.includes("previous")||text.includes("back")){previousTrack();return}
+if(text.includes("pause")){pauseCurrent();return}
+if(text.includes("stop")){stopCurrent();return}
+if(text.includes("play")||text.includes("resume")){let q=text.replace(/\b(play|resume)\b/g,"").trim();if(q){let i=findTrack(q);if(i>=0){playIndex(i);return}}playCurrent();return}
+let i=findTrack(text);if(i>=0)playIndex(i);else speak("I did not understand that command.")
+}
+function initRecognition(){
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;if(!SR){setStatus("Voice recognition is not supported in this browser.");return}
+recognition=new SR();recognition.continuous=true;recognition.interimResults=false;recognition.lang="en-US";
+recognition.onstart=()=>{listening=true;setStatus("🎙 Listening for voice commands...")};
+recognition.onresult=e=>{let r=e.results[e.results.length-1];if(!r.isFinal)return;let t=r[0].transcript.trim();setStatus("Heard: "+t);processCommand(t)};
+recognition.onerror=e=>{if(e.error==="not-allowed"||e.error==="service-not-allowed"){setStatus("Microphone permission is required for voice control.");listening=false}};
+recognition.onend=()=>{listening=false;setStatus("Voice recognition stopped.");setTimeout(()=>{if(recognition&&!listening)try{recognition.start()}catch(e){}},1000)};
+try{recognition.start()}catch(e){}
+}
+document.getElementById("play").onclick=playCurrent;document.getElementById("pause").onclick=pauseCurrent;document.getElementById("stop").onclick=stopCurrent;document.getElementById("next").onclick=nextTrack;document.getElementById("prev").onclick=previousTrack;document.getElementById("volUp").onclick=volumeUp;document.getElementById("volDown").onclick=volumeDown;document.getElementById("mute").onclick=toggleMute;
+progressEl.oninput=()=>{if(audio.duration)audio.currentTime=progressEl.value/100*audio.duration};
+audio.ontimeupdate=()=>{if(audio.duration)progressEl.value=audio.currentTime/audio.duration*100};
+audio.onloadedmetadata=()=>{if(currentIndex>=0){tracks[currentIndex].duration=audio.duration;renderPlaylist()}};
+audio.onended=nextTrack;
+fileInput.onchange=e=>{let files=Array.from(e.target.files||[]);if(!files.length)return;tracks=files.map(f=>({title:f.name.replace(/\.[^/.]+$/,""),url:URL.createObjectURL(f)}));currentIndex=-1;titleEl.textContent="Choose a song";renderPlaylist();speak(files.length+" songs loaded")};
+window.addEventListener("load",()=>{renderPlaylist();speak("Voice player ready");initRecognition()});
+window.addEventListener("beforeunload",()=>tracks.forEach(t=>{if(t.url&&t.url.startsWith("blob:"))URL.revokeObjectURL(t.url)}));
+</script>
+</body>
+</html>
